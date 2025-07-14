@@ -76,7 +76,7 @@ android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
-
+    
     namespace "com.listagolden"
     defaultConfig {
         applicationId "com.listagolden"
@@ -84,6 +84,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        multiDexEnabled true 
     }
     signingConfigs {
         debug {
@@ -93,6 +94,13 @@ android {
             keyPassword 'android'
         }
     }
+    // flavorDimensions "react-native-camera"
+// productFlavors {
+//   general {
+//     dimension "react-native-camera"
+//   }
+// }
+
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
@@ -106,14 +114,26 @@ android {
         }
     }
 }
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
 
 dependencies {
-    // The version of react-native is set by the React Native Gradle Plugin
-    implementation("com.facebook.react:react-android")
+  // ya existentes
+  implementation("com.facebook.react:react-android")
+  implementation 'com.google.android.gms:play-services-base:17.6.0'
+  implementation 'com.google.android.gms:play-services-maps:18.2.0'
+ 
+  // si usás hermes
+  if (hermesEnabled.toBoolean()) {
+    implementation("com.facebook.react:hermes-android")
+  } else {
+    implementation jscFlavor
+  }
 
-    if (hermesEnabled.toBoolean()) {
-        implementation("com.facebook.react:hermes-android")
-    } else {
-        implementation jscFlavor
-    }
+  
+ 
 }

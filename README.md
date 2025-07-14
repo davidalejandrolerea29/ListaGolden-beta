@@ -1,97 +1,169 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Lista Golden - Expo App con Supabase
 
-# Getting Started
+Una aplicación móvil desarrollada con Expo y React Native que permite a los usuarios acceder a beneficios exclusivos en establecimientos de Argentina.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## 🚀 Características Principales
 
-## Step 1: Start Metro
+### 🔐 Autenticación Completa
+- **Registro e inicio de sesión** con email y contraseña
+- **Autenticación con Supabase** para seguridad robusta
+- **Perfiles de usuario** con información personalizada
+- **Gestión de sesiones** automática
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+### 🗺️ Mapa Interactivo
+- **Mapa real de Argentina** con OpenStreetMap
+- **Polígonos de provincias** coloreados según estado de activación
+- **Geolocalización** del usuario
+- **Controles de zoom** y navegación
+- **Selección interactiva** de provincias
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### 🏢 Sistema de Establecimientos
+- **Base de datos real** con empresas y servicios
+- **Categorización** por tipo de establecimiento
+- **Horarios y servicios** detallados
+- **Imágenes y promociones** de cada establecimiento
+- **Sistema de reservas** y delivery
 
-```sh
-# Using npm
-npm start
+### 💳 Membresías por Provincia
+- **Activación de provincias** con pago único
+- **Gestión de beneficios** por ubicación
+- **Seguimiento de ahorros** acumulados
+- **Llaves digitales** para usar beneficios
 
-# OR using Yarn
-yarn start
+## 🛠️ Tecnologías Utilizadas
+
+- **Expo SDK 53** - Framework de desarrollo
+- **React Native** - Desarrollo móvil multiplataforma
+- **Supabase** - Backend como servicio
+- **TypeScript** - Tipado estático
+- **React Native Maps** - Mapas interactivos
+- **Expo Router** - Navegación basada en archivos
+
+## 📦 Instalación y Configuración
+
+### 1. Clonar el repositorio
+```bash
+git clone <repository-url>
+cd lista-golden-expo
 ```
 
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+### 2. Instalar dependencias
+```bash
+npm install
 ```
 
-### iOS
+### 3. Configurar Supabase
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+#### Crear proyecto en Supabase
+1. Ve a [supabase.com](https://supabase.com)
+2. Crea un nuevo proyecto
+3. Obtén tu URL y clave anónima del proyecto
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+#### Configurar variables de entorno
+Crea un archivo `.env` en la raíz del proyecto:
+```env
+EXPO_PUBLIC_SUPABASE_URL=tu_url_de_supabase
+EXPO_PUBLIC_SUPABASE_ANON_KEY=tu_clave_anonima_de_supabase
 ```
 
-Then, and every time you update your native dependencies, run:
+#### Ejecutar migraciones
+1. Ve a tu dashboard de Supabase
+2. Navega a SQL Editor
+3. Ejecuta el contenido de `supabase/migrations/001_initial_schema.sql`
+4. Ejecuta el contenido de `supabase/migrations/002_sample_data.sql`
 
-```sh
-bundle exec pod install
+### 4. Ejecutar la aplicación
+```bash
+npm run dev
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+## 📱 Estructura del Proyecto
 
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
+```
+├── app/                    # Rutas de la aplicación
+│   ├── (tabs)/            # Navegación por pestañas
+│   ├── auth.tsx           # Pantalla de autenticación
+│   └── index.tsx          # Pantalla de inicio
+├── components/            # Componentes reutilizables
+├── hooks/                 # Hooks personalizados
+├── lib/                   # Configuración de librerías
+├── supabase/             # Migraciones de base de datos
+├── types/                # Definiciones de tipos
+└── utils/                # Utilidades
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+## 🗄️ Esquema de Base de Datos
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+### Tablas Principales
+- **companies** - Establecimientos y empresas
+- **provinces** - Provincias de Argentina
+- **user_profiles** - Perfiles extendidos de usuarios
+- **user_memberships** - Membresías activas por provincia
+- **services** - Servicios ofrecidos por empresas
+- **promotions** - Promociones y beneficios
+- **schedules** - Horarios de atención
 
-## Step 3: Modify your app
+### Seguridad
+- **Row Level Security (RLS)** habilitado en todas las tablas
+- **Políticas de acceso** para proteger datos de usuarios
+- **Autenticación JWT** con Supabase Auth
 
-Now that you have successfully run the app, let's make changes!
+## 🔧 Funcionalidades Implementadas
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+### ✅ Autenticación
+- [x] Registro con email y contraseña
+- [x] Inicio de sesión
+- [x] Gestión de perfiles de usuario
+- [x] Cierre de sesión
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+### ✅ Mapa y Ubicaciones
+- [x] Mapa interactivo de Argentina
+- [x] Polígonos de provincias
+- [x] Geolocalización
+- [x] Controles de navegación
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+### ✅ Establecimientos
+- [x] Lista de empresas por provincia
+- [x] Detalles de establecimientos
+- [x] Horarios y servicios
+- [x] Sistema de imágenes
 
-## Congratulations! :tada:
+### ✅ Membresías
+- [x] Activación de provincias
+- [x] Gestión de beneficios
+- [x] Seguimiento de ahorros
 
-You've successfully run and modified your React Native App. :partying_face:
+## 🚀 Próximas Funcionalidades
 
-### Now what?
+- [ ] Sistema de pagos con Stripe
+- [ ] Notificaciones push
+- [ ] Chat con establecimientos
+- [ ] Sistema de reseñas
+- [ ] Programa de referidos
+- [ ] Integración con redes sociales
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+## 📄 Licencia
 
-# Troubleshooting
+Este proyecto está bajo la Licencia MIT. Ver el archivo `LICENSE` para más detalles.
 
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+## 🤝 Contribuir
 
-# Learn More
+Las contribuciones son bienvenidas. Por favor:
 
-To learn more about React Native, take a look at the following resources:
+1. Fork el proyecto
+2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
+3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push a la rama (`git push origin feature/AmazingFeature`)
+5. Abre un Pull Request
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+## 📞 Soporte
+
+Si tienes alguna pregunta o necesitas ayuda, puedes:
+
+- Abrir un issue en GitHub
+- Contactar al equipo de desarrollo
+- Revisar la documentación de Supabase
+
+---
+
+**Lista Golden** - Tu llave a beneficios exclusivos en Argentina 🇦🇷
