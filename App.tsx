@@ -1,5 +1,5 @@
 import React from 'react';
-import { StatusBar } from 'react-native';
+import { StatusBar, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -49,10 +49,35 @@ function TabNavigator() {
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Inicio', tabBarIcon: ({ size, color }) => <Home size={size} color={color} /> }} />
       <Tab.Screen name="Map" component={MapScreen} options={{ title: 'Mapa', tabBarIcon: ({ size, color }) => <MapPin size={size} color={color} /> }} />
-      <Tab.Screen name="MisLlaves" component={MisLlavesScreen} options={{ title: 'Mis Llaves', tabBarIcon: ({ size, color }) => <KeyRound size={size} color={color} /> }} />
+     <Tab.Screen
+  name="MisLlaves"
+  component={MisLlavesScreen}
+  options={{
+    title: '',
+    tabBarLabel: 'Mis Llaves',
+    tabBarIcon: ({ color }) => (
+      <View
+        style={{
+          position: 'absolute',
+          top: -30,
+          backgroundColor: colors.brandGold,
+          borderRadius: 40,
+          padding: 15,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 4,
+          elevation: 6,
+        }}
+      >
+        <KeyRound size={28} color={colors.brandDarkSecondary} />
+      </View>
+    ),
+  }}
+/>
       <Tab.Screen name="Delivery" component={DeliveryScreen} options={{ title: 'Delivery', tabBarIcon: ({ size, color }) => <Truck size={size} color={color} /> }} />
       <Tab.Screen name="Perfil" component={PerfilScreen} options={{ title: 'Perfil', tabBarIcon: ({ size, color }) => <User size={size} color={color} /> }} />
-      <Tab.Screen name="Admin" component={AdminDashboard} options={{ title: 'Admin', tabBarIcon: ({ size, color }) => <Settings size={size} color={color} /> }} />
+   {/*}   <Tab.Screen name="Admin" component={AdminDashboard} options={{ title: 'Admin', tabBarIcon: ({ size, color }) => <Settings size={size} color={color} /> }} /> {*/}
     </Tab.Navigator>
   );
 }

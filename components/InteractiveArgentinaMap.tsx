@@ -1,56 +1,192 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import React, { useState, useRef, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Dimensions,
+  Platform,
+  Linking,
+  Alert,
+} from 'react-native';
+import MapView, { Marker, Polygon, Region } from 'react-native-maps';
+import argentinaGeoJSON from '../assets/ar.json';
 import { colors } from '../constants/colors';
-import { ARGENTINA_PROVINCE_SVG_PATHS } from '../constants/argentinaPath';
+import { useFocusEffect } from '@react-navigation/native';
 
 interface Props {
   activeProvinces: string[];
   selectedProvince: string | null;
-  onProvincePress: (provinceName: string) => void;
+  onProvincePress: (provinceName: string | null) => void;
 }
 
-const { width: screenWidth } = Dimensions.get('window');
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+const INITIAL_REGION: Region = {
+  latitude: -38.4161,
+  longitude: -63.6167,
+  latitudeDelta: 30,
+  longitudeDelta: 30,
+};
 
 export function InteractiveArgentinaMap({
   activeProvinces,
   selectedProvince,
   onProvincePress,
 }: Props) {
-  const provinces = Object.keys(ARGENTINA_PROVINCE_SVG_PATHS);
+  const mapRef = useRef<MapView | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
-  const getFillColor = (provinceName: string) => {
-    if (selectedProvince === provinceName) return colors.brandGold;
-    if (activeProvinces.includes(provinceName)) return `${colors.brandGold}CC`; // 80% opacity
-    return `${colors.brandGray}55`; // 33% opacity
+  useFocusEffect(
+    useCallback(() => {
+      if (mapRef.current && mapReady) {
+        mapRef.current.animateToRegion(INITIAL_REGION, 1000);
+      }
+      onProvincePress(null);
+    }, [mapReady])
+  );
+// useFocusEffect(
+//   useCallback(() => {
+//     setRegion(INITIAL_REGION);
+//     onProvincePress(null);
+//     setMapKey((prev) => prev + 1);
+//   }, [])
+// );
+
+  const extractPolygons = (geometry: any): { latitude: number; longitude: number }[][] => {
+    const polygons: { latitude: number; longitude: number }[][] = [];
+
+    if (geometry.type === 'Polygon') {
+      geometry.coordinates.forEach((ring: number[][]) => {
+        polygons.push(
+          ring.map(([lng, lat]: number[]) => ({
+            latitude: lat,
+            longitude: lng,
+          }))
+        );
+      });
+    } else if (geometry.type === 'MultiPolygon') {
+      geometry.coordinates.forEach((polygon: number[][][]) => {
+        polygon.forEach((ring: number[][]) => {
+          polygons.push(
+            ring.map(([lng, lat]: number[]) => ({
+              latitude: lat,
+              longitude: lng,
+            }))
+          );
+        });
+      });
+    }
+
+    return polygons;
   };
+
+  const getMarkerCoordinates = (provinceName: string) => {
+    const feature = argentinaGeoJSON.features.find(
+      (f) => f.properties.name === provinceName
+    );
+    if (!feature) return { latitude: -38, longitude: -63 };
+
+    let coords: number[] | undefined;
+
+    if (feature.geometry.type === 'Polygon') {
+      coords = feature.geometry.coordinates?.[0]?.[0];
+    } else if (feature.geometry.type === 'MultiPolygon') {
+      coords = feature.geometry.coordinates?.[0]?.[0]?.[0];
+    }
+
+    if (coords && Array.isArray(coords) && coords.length === 2) {
+      return {
+        latitude: coords[1],
+        longitude: coords[0],
+      };
+    }
+
+    return { latitude: -38, longitude: -63 };
+  };
+
+  const openMapForProvince = (provinceName: string) => {
+    const feature = argentinaGeoJSON.features.find(
+      (f) => f.properties.name === provinceName
+    );
+    const coords = feature?.geometry.coordinates?.[0]?.[0];
+    if (!coords) {
+      Alert.alert('Error', 'No se encontraron coordenadas para esta provincia.');
+      return;
+    }
+
+    const [lng, lat] = coords;
+    const url = Platform.select({
+      ios: `http://maps.apple.com/?ll=${lat},${lng}`,
+      android: `geo:${lat},${lng}?q=${lat},${lng}(${provinceName})`,
+    });
+
+    Linking.openURL(url as string).catch(() => {
+      Alert.alert('Error', 'No se pudo abrir la aplicación de mapas.');
+    });
+  };
+
+  if (!argentinaGeoJSON?.features?.length) {
+    return <Text style={styles.subtitle}>Cargando mapa...</Text>;
+  }
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Mapa Interactivo de Argentina</Text>
       <Text style={styles.subtitle}>Toca una provincia para ver sus beneficios</Text>
 
-      <Svg
-        viewBox="0 0 800 1000"
-        width={screenWidth - 32}
-        height={400}
+      <MapView
+        ref={(ref) => {
+          mapRef.current = ref;
+        }}
         style={styles.map}
+        initialRegion={INITIAL_REGION}
+        onMapReady={() => setMapReady(true)} // 👈 importante
       >
-        {provinces.map((province) => (
-          <Path
-            key={province}
-            d={ARGENTINA_PROVINCE_SVG_PATHS[province]}
-            fill={getFillColor(province)}
-            stroke={colors.brandDark}
-            strokeWidth={selectedProvince === province ? 2 : 1}
-            transform={selectedProvince === province ? 'scale(1.05)' : undefined}
-            onPress={() => onProvincePress(province)}
-          />
-        ))}
-      </Svg>
+        {argentinaGeoJSON.features.map((feature, idx) => {
+          const name = feature.properties.name;
+          const isActive = activeProvinces.includes(name);
+          const isSelected = selectedProvince === name;
 
-      <ScrollView style={styles.provincesList} horizontal showsHorizontalScrollIndicator={false}>
-        {provinces.map((province) => {
+          if (!isActive && !isSelected) return null;
+
+          const polygons = extractPolygons(feature.geometry);
+
+          return polygons.map((coords, i) => (
+            <Polygon
+              key={`${name}-${idx}-${i}`}
+              coordinates={coords}
+              strokeColor={isSelected ? colors.brandLight : colors.brandDark}
+              fillColor={
+                isSelected
+                  ? colors.brandGold
+                  : isActive
+                  ? `${colors.brandGold}88`
+                  : `${colors.brandGray}33`
+              }
+              strokeWidth={2}
+              tappable
+              onPress={() => onProvincePress(name)}
+            />
+          ));
+        })}
+
+        {selectedProvince && (
+          <Marker
+            coordinate={getMarkerCoordinates(selectedProvince)}
+            title={selectedProvince}
+          />
+        )}
+      </MapView>
+
+      <ScrollView
+        style={styles.provincesList}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+      >
+        {argentinaGeoJSON.features.map((feature) => {
+          const province = feature.properties.name;
           const isActive = activeProvinces.includes(province);
           const isSelected = selectedProvince === province;
 
@@ -63,6 +199,7 @@ export function InteractiveArgentinaMap({
                 isSelected && styles.selectedProvince,
               ]}
               onPress={() => onProvincePress(province)}
+              onLongPress={() => openMapForProvince(province)}
             >
               <Text
                 style={[
@@ -85,14 +222,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.brandDarkSecondary,
-    padding: 16,
+    paddingTop: 16,
   },
   title: {
     fontSize: 18,
     fontWeight: 'bold',
     color: colors.brandLight,
     textAlign: 'center',
-    marginBottom: 4,
   },
   subtitle: {
     fontSize: 14,
@@ -101,12 +237,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   map: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.brandGray,
+    width: screenWidth,
+    height: screenHeight * 0.5,
   },
   provincesList: {
     marginTop: 16,
+    paddingHorizontal: 16,
   },
   provinceButton: {
     backgroundColor: colors.brandGray,
