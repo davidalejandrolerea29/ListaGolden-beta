@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,20 +10,22 @@ import {
   Linking,
   Alert,
 } from 'react-native';
-import MapView, { Marker, Polygon, Region } from 'react-native-maps';
+import MapView, { Marker, Polygon, Region, PROVIDER_GOOGLE } from 'react-native-maps';
 import argentinaGeoJSON from '../assets/ar.json';
 import { colors } from '../constants/colors';
-import { useFocusEffect } from '@react-navigation/native';
 
 interface Props {
   activeProvinces: string[];
   selectedProvince: string | null;
   onProvincePress: (provinceName: string | null) => void;
+  currentRegion?: Region;
+  onRegionChange?: (region: Region) => void;
+  style?: any;
 }
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-const INITIAL_REGION: Region = {
+const ARGENTINA_REGION: Region = {
   latitude: -38.4161,
   longitude: -63.6167,
   latitudeDelta: 30,
@@ -31,28 +33,57 @@ const INITIAL_REGION: Region = {
 };
 
 export function InteractiveArgentinaMap({
-  activeProvinces,
-  selectedProvince,
-  onProvincePress,
+  activeProvinces = [],
+  selectedProvince = null,
+  onProvincePress = () => {},
+  currentRegion = ARGENTINA_REGION,
+  onRegionChange = () => {},
+  style = {},
 }: Props) {
-  const mapRef = useRef<MapView | null>(null);
+  const mapRef = useRef<MapView>(null);
+   const [isAndroid, setIsAndroid] = useState(false)
   const [mapReady, setMapReady] = useState(false);
+  const [forceUpdateKey, setForceUpdateKey] = useState(0);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (mapRef.current && mapReady) {
-        mapRef.current.animateToRegion(INITIAL_REGION, 1000);
+  useEffect(() => {
+    setIsAndroid(Platform.OS === 'android');
+    
+    return () => {
+      // Solución para el error en Android
+      if (isAndroid && mapRef.current) {
+        try {
+          mapRef.current?.getMap().then(map => {
+            map.remove();
+          });
+        } catch (error) {
+          console.log('Error cleaning map:', error);
+        }
       }
-      onProvincePress(null);
-    }, [mapReady])
-  );
-// useFocusEffect(
-//   useCallback(() => {
-//     setRegion(INITIAL_REGION);
-//     onProvincePress(null);
-//     setMapKey((prev) => prev + 1);
-//   }, [])
-// );
+    };
+  }, []);
+
+
+  // Solución definitiva para el problema de África
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (mapRef.current) {
+        mapRef.current.animateToRegion(currentRegion, 1000);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [forceUpdateKey, currentRegion]);
+
+  const handleMapReady = useCallback(() => {
+    setMapReady(true);
+    if (mapRef.current) {
+      mapRef.current.animateToRegion(currentRegion, 1000);
+    }
+  }, [currentRegion]);
+
+  const handleRegionChangeComplete = useCallback((region: Region) => {
+    onRegionChange(region);
+  }, [onRegionChange]);
 
   const extractPolygons = (geometry: any): { latitude: number; longitude: number }[][] => {
     const polygons: { latitude: number; longitude: number }[][] = [];
@@ -127,35 +158,44 @@ export function InteractiveArgentinaMap({
     });
   };
 
+  const resetMapView = () => {
+    setForceUpdateKey(prev => prev + 1);
+    if (mapRef.current) {
+      mapRef.current.animateToRegion(currentRegion, 1000);
+    }
+  };
+
   if (!argentinaGeoJSON?.features?.length) {
     return <Text style={styles.subtitle}>Cargando mapa...</Text>;
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]} key={`map-container-${forceUpdateKey}`}>
       <Text style={styles.title}>Mapa Interactivo de Argentina</Text>
       <Text style={styles.subtitle}>Toca una provincia para ver sus beneficios</Text>
 
       <MapView
-        ref={(ref) => {
-          mapRef.current = ref;
-        }}
+        ref={mapRef}
+        key={`map-view-${forceUpdateKey}`}
         style={styles.map}
-        initialRegion={INITIAL_REGION}
-        onMapReady={() => setMapReady(true)} // 👈 importante
+        provider={PROVIDER_GOOGLE}
+        androidLayerType={isAndroid ? 'hardware' : 'none'}
+        initialRegion={currentRegion}
+        region={currentRegion}
+        onMapReady={handleMapReady}
+        onLayout={handleMapReady}
+        onRegionChangeComplete={handleRegionChangeComplete}
       >
-        {argentinaGeoJSON.features.map((feature, idx) => {
+        {mapReady && argentinaGeoJSON.features.map((feature, idx) => {
           const name = feature.properties.name;
           const isActive = activeProvinces.includes(name);
           const isSelected = selectedProvince === name;
-
-          if (!isActive && !isSelected) return null;
 
           const polygons = extractPolygons(feature.geometry);
 
           return polygons.map((coords, i) => (
             <Polygon
-              key={`${name}-${idx}-${i}`}
+              key={`${name}-${idx}-${i}-${forceUpdateKey}`}
               coordinates={coords}
               strokeColor={isSelected ? colors.brandLight : colors.brandDark}
               fillColor={
@@ -179,6 +219,13 @@ export function InteractiveArgentinaMap({
           />
         )}
       </MapView>
+
+      <TouchableOpacity 
+        style={styles.resetButton}
+        onPress={resetMapView}
+      >
+        <Text style={styles.resetButtonText}>Centrar Mapa</Text>
+      </TouchableOpacity>
 
       <ScrollView
         style={styles.provincesList}
@@ -229,6 +276,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: colors.brandLight,
     textAlign: 'center',
+    marginBottom: 4,
   },
   subtitle: {
     fontSize: 14,
@@ -237,12 +285,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   map: {
-    width: screenWidth,
-    height: screenHeight * 0.5,
+    width: '100%',
+    height: 400,
+    backgroundColor: colors.brandDark,
   },
   provincesList: {
     marginTop: 16,
     paddingHorizontal: 16,
+    maxHeight: 60,
   },
   provinceButton: {
     backgroundColor: colors.brandGray,
@@ -271,5 +321,19 @@ const styles = StyleSheet.create({
   },
   selectedProvinceText: {
     fontWeight: 'bold',
+  },
+  resetButton: {
+    position: 'absolute',
+    top: 60,
+    right: 16,
+    backgroundColor: colors.brandGold,
+    padding: 8,
+    borderRadius: 20,
+    zIndex: 1,
+  },
+  resetButtonText: {
+    color: colors.brandDark,
+    fontWeight: 'bold',
+    fontSize: 12,
   },
 });

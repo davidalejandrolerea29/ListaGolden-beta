@@ -118,39 +118,46 @@ export default function PerfilScreen({ navigation }: PerfilScreenProps) {
         </View>
 
         {/* Savings Card */}
-        <View style={[globalStyles.card, styles.savingsCard]}>
+        <View style={[globalStyles.card, styles.savingsCard, styles.highlightCard]}>
           <View style={styles.savingsHeader}>
             <PiggyBank size={24} color={colors.brandGold} />
             <Text style={styles.cardTitle}>Mis Ahorros Acumulados</Text>
           </View>
-          <Text style={styles.savingsAmount}>{formatCurrency(profile.accumulated_savings)}</Text>
           
-          <View style={styles.chartContainer}>
-            <View style={styles.pieChart}>
-              <Text style={styles.chartText}>{savedPercent.toFixed(0)}%{'\n'}Ahorrado</Text>
+          <View style={styles.savingsMainDisplay}>
+            <Text style={styles.savingsAmount}>{formatCurrency(profile.accumulated_savings)}</Text>
+            <Text style={styles.savingsLabel}>Total Ahorrado</Text>
+          </View>
+
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBar}>
+              <View 
+                style={[
+                  styles.progressFill, 
+                  { width: `${savedPercent}%` }
+                ]} 
+              />
             </View>
-            
-            <View style={styles.legend}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendColor, { backgroundColor: colors.success }]} />
-                <Text style={styles.legendText}>Ahorrado: </Text>
-                <Text style={styles.legendValue}>{formatCurrency(accumulatedSavings)}</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendColor, { backgroundColor: colors.brandGray }]} />
-                <Text style={styles.legendText}>Potencial Restante: </Text>
-                <Text style={styles.legendValue}>{formatCurrency(potentialRemaining)}</Text>
-              </View>
+            <Text style={styles.progressText}>{savedPercent.toFixed(0)}% del límite total</Text>
+          </View>
+
+          <View style={styles.savingsStats}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Potencial Restante</Text>
+              <Text style={styles.statValue}>{formatCurrency(potentialRemaining)}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Límite Total</Text>
+              <Text style={styles.statValue}>{formatCurrency(totalSavingsLimit)}</Text>
             </View>
           </View>
           
-          {activeProvinces.length > 0 && (
-            <Text style={styles.savingsNote}>
-              Límite total de ahorro (por provincias activas): {formatCurrency(totalSavingsLimit)}
-            </Text>
-          )}
           <Text style={styles.savingsNote}>
-            Límite de ahorro por provincia: {formatCurrency(PROVINCE_SAVINGS_LIMIT)}
+            {activeProvinces.length > 0 
+              ? `Tienes ${activeProvinces.length} provincia${activeProvinces.length > 1 ? 's' : ''} activa${activeProvinces.length > 1 ? 's' : ''}`
+              : 'Activa provincias para aumentar tu límite de ahorro'
+            }
           </Text>
         </View>
 
@@ -304,11 +311,24 @@ const styles = StyleSheet.create({
   },
   savingsCard: {
     padding: 16,
+    marginBottom: 20,
+  },
+  highlightCard: {
+    borderWidth: 2,
+    borderColor: colors.brandGold,
+    backgroundColor: 'rgba(212, 175, 55, 0.05)',
   },
   savingsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 20,
+  },
+  savingsMainDisplay: {
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingVertical: 16,
+    backgroundColor: 'rgba(212, 175, 55, 0.1)',
+    borderRadius: 12,
   },
   cardTitle: {
     fontSize: 18,
@@ -317,61 +337,70 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   savingsAmount: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: 'bold',
-    color: colors.brandLight,
-    textAlign: 'center',
-    marginBottom: 24,
+    color: colors.brandGold,
+    marginBottom: 4,
   },
-  chartContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  pieChart: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: colors.brandDarkSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chartText: {
-    fontSize: 12,
-    color: colors.brandLight,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  legend: {
-    flex: 1,
-    paddingLeft: 16,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  legendColor: {
-    width: 14,
-    height: 14,
-    borderRadius: 3,
-    marginRight: 8,
-  },
-  legendText: {
+  savingsLabel: {
     fontSize: 14,
     color: colors.brandGray,
+    fontWeight: '500',
   },
-  legendValue: {
+  progressContainer: {
+    marginBottom: 20,
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: colors.brandDarkSecondary,
+    borderRadius: 4,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.brandGold,
+    borderRadius: 4,
+  },
+  progressText: {
+    fontSize: 12,
+    color: colors.brandGray,
+    textAlign: 'center',
+  },
+  savingsStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    paddingVertical: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    borderRadius: 8,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: colors.brandGray,
+    opacity: 0.3,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: colors.brandGray,
+    marginBottom: 4,
+  },
+  statValue: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.brandLight,
   },
   savingsNote: {
-    fontSize: 12,
+    fontSize: 13,
     color: colors.brandGray,
     textAlign: 'center',
-    marginTop: 8,
+    fontStyle: 'italic',
   },
   provincesCard: {
     padding: 16,

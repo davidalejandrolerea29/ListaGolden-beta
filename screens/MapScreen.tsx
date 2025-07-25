@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, MapPin } from 'lucide-react-native';
+import { Search, MapPin, Navigation, Heart } from 'lucide-react-native';
 import { colors } from '../constants/colors';
 import { globalStyles } from '../styles/globalStyles';
 import { EstablishmentCard } from '../components/EstablishmentCard';
@@ -21,26 +21,89 @@ export default function MapScreen({ navigation }: MapScreenProps) {
   const [selectedProvince, setSelectedProvince] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  const [mapZoom, setMapZoom] = useState(1);
+  const [showFavorites, setShowFavorites] = useState(false);
+  const [mapKey, setMapKey] = useState(0);
+  const [mapRegion, setMapRegion] = useState({
+    latitude: -38.4161,
+    longitude: -63.6167,
+    latitudeDelta: 30,
+    longitudeDelta: 30,
+  });
 
   const activeProvinces = getActiveProvinces();
+  
+  const favoriteEstablishments = [
+    { id: 'fav1', name: 'Café Favorito', address: 'Av. Corrientes 1234', discount: '20% off', category: 'Gastronomía', province: 'Buenos Aires' },
+    { id: 'fav2', name: 'Librería Popular', address: 'Calle Florida 567', discount: '15% off', category: 'Libros', province: 'Córdoba' },
+  ];
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      setMapKey(prev => prev + 1);
+    });
+
+    return unsubscribe;
+  }, [navigation]);
 
   const showToast = (message: string) => {
     setToastMessage(message);
     setToastVisible(true);
   };
 
-  const handleProvinceSelect = (provinceName: string) => {
-    if (activeProvinces.includes(provinceName)) {
+  const handleProvinceSelect = (provinceName: string | null) => {
+    if (provinceName === selectedProvince) return;
+    if (provinceName && activeProvinces.includes(provinceName)) {
       setSelectedProvince(provinceName);
       setSearchTerm('');
+      setShowFavorites(false);
       showToast(`Mostrando beneficios en ${provinceName}`);
-    } else {
+      
+      // Centrar el mapa en la provincia seleccionada
+      const feature = argentinaGeoJSON.features.find(
+        (f) => f.properties.name === provinceName
+      );
+      if (feature) {
+        const coords = feature.geometry.coordinates?.[0]?.[0]?.[0];
+        if (coords) {
+          setMapRegion({
+            latitude: coords[1],
+            longitude: coords[0],
+            latitudeDelta: 5,
+            longitudeDelta: 5,
+          });
+        }
+      }
+    } else if (provinceName) {
       showToast(`Activa ${provinceName} desde tu Perfil para ver sus beneficios aquí.`);
+    } else {
+      setSelectedProvince(null);
+    }
+  };
+
+  const handleNearMe = () => {
+    showToast('Buscando establecimientos cercanos a tu ubicación...');
+    setSelectedProvince(null);
+    setShowFavorites(false);
+    setMapRegion({
+      latitude: -38.4161,
+      longitude: -63.6167,
+      latitudeDelta: 30,
+      longitudeDelta: 30,
+    });
+  };
+
+  const toggleFavorites = () => {
+    setShowFavorites(!showFavorites);
+    if (!showFavorites) {
+      setSelectedProvince(null);
+      showToast('Mostrando tus establecimientos favoritos');
     }
   };
 
   const getFilteredEstablishments = () => {
+    if (showFavorites) {
+      return favoriteEstablishments;
+    }
     if (selectedProvince) {
       return getCompaniesByProvince(selectedProvince);
     }
@@ -52,11 +115,9 @@ export default function MapScreen({ navigation }: MapScreenProps) {
   return (
     <SafeAreaView style={globalStyles.safeArea}>
       <View style={styles.container}>
-        {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Mapa de Argentina</Text>
           
-          {/* Search Bar */}
           <View style={styles.searchContainer}>
             <Search size={20} color={colors.brandGray} style={styles.searchIcon} />
             <TouchableOpacity
@@ -71,7 +132,24 @@ export default function MapScreen({ navigation }: MapScreenProps) {
             </TouchableOpacity>
           </View>
 
-          {/* Province Status Indicator */}
+          <View style={styles.quickActions}>
+            <TouchableOpacity 
+              style={[styles.actionButton, showFavorites && styles.activeActionButton]} 
+              onPress={toggleFavorites}
+            >
+              <Heart size={18} color={showFavorites ? colors.brandDark : colors.brandGold} />
+              <Text style={[styles.actionButtonText, showFavorites && styles.activeActionButtonText]}>Favoritos</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.actionButton} 
+              onPress={handleNearMe}
+            >
+              <Navigation size={18} color={colors.brandGold} />
+              <Text style={styles.actionButtonText}>Cerca de mí</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.statusContainer}>
             <View style={styles.statusItem}>
               <View style={[styles.statusDot, { backgroundColor: colors.brandGold }]} />
@@ -84,23 +162,23 @@ export default function MapScreen({ navigation }: MapScreenProps) {
           </View>
         </View>
 
-        {/* Map Container */}
         <View style={styles.mapContainer}>
           <InteractiveArgentinaMap
+            key={`interactive-map-${mapKey}`}
             activeProvinces={activeProvinces}
             selectedProvince={selectedProvince}
             onProvincePress={handleProvinceSelect}
-            zoom={mapZoom}
+            currentRegion={mapRegion}
+            onRegionChange={setMapRegion}
             style={styles.map}
           />
 
-          {/* Selected Province Info */}
           {selectedProvince && (
             <View style={styles.provinceInfo}>
               <MapPin size={16} color={colors.brandGold} />
               <Text style={styles.provinceInfoText}>{selectedProvince}</Text>
               <TouchableOpacity 
-                onPress={() => setSelectedProvince(null)}
+                onPress={() => handleProvinceSelect(null)}
                 style={styles.clearSelection}
               >
                 <Text style={styles.clearSelectionText}>✕</Text>
@@ -109,15 +187,25 @@ export default function MapScreen({ navigation }: MapScreenProps) {
           )}
         </View>
 
-        {/* Results Section */}
         <ScrollView style={styles.establishmentsList} showsVerticalScrollIndicator={false}>
           {filteredEstablishments.length > 0 ? (
             <>
               <View style={styles.resultsHeader}>
-                <MapPin size={20} color={colors.brandGold} />
-                <Text style={styles.listTitle}>
-                  Beneficios en {selectedProvince} ({filteredEstablishments.length})
-                </Text>
+                {showFavorites ? (
+                  <>
+                    <Heart size={20} color={colors.brandGold} />
+                    <Text style={styles.listTitle}>
+                      Tus Favoritos ({filteredEstablishments.length})
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <MapPin size={20} color={colors.brandGold} />
+                    <Text style={styles.listTitle}>
+                      Beneficios en {selectedProvince} ({filteredEstablishments.length})
+                    </Text>
+                  </>
+                )}
               </View>
               {filteredEstablishments.map(establishment => (
                 <EstablishmentCard
@@ -127,6 +215,13 @@ export default function MapScreen({ navigation }: MapScreenProps) {
                 />
               ))}
             </>
+          ) : showFavorites ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>No tienes establecimientos favoritos.</Text>
+              <Text style={styles.emptySubtext}>
+                Agrega establecimientos a tus favoritos para verlos aquí.
+              </Text>
+            </View>
           ) : selectedProvince ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyText}>No hay beneficios activos en esta provincia.</Text>
@@ -143,7 +238,6 @@ export default function MapScreen({ navigation }: MapScreenProps) {
                 Las provincias en <Text style={styles.goldText}>amarillo</Text> tienen beneficios activos.
               </Text>
               
-              {/* Quick Access to Active Provinces */}
               {activeProvinces.length > 0 && (
                 <View style={styles.quickAccess}>
                   <Text style={styles.quickAccessTitle}>Acceso Rápido:</Text>
@@ -210,6 +304,36 @@ const styles = StyleSheet.create({
   searchPlaceholder: {
     color: colors.brandGray,
     fontSize: 16,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.brandDark,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    flex: 1,
+    marginHorizontal: 4,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.brandGold,
+  },
+  activeActionButton: {
+    backgroundColor: colors.brandGold,
+  },
+  actionButtonText: {
+    color: colors.brandGold,
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  activeActionButtonText: {
+    color: colors.brandDark,
   },
   statusContainer: {
     flexDirection: 'row',

@@ -4,7 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
-import { Chrome as Home, MapPin, KeyRound, Truck, User, Settings } from 'lucide-react-native';
+import { Home as Home, MapPin, KeyRound, Truck, User, Settings } from 'lucide-react-native';
 import { colors } from './constants/colors';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 

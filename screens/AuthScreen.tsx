@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView,
-  TouchableOpacity, Switch,
+  TouchableOpacity, Switch, Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Picker } from '@react-native-picker/picker';
@@ -111,34 +111,19 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
     <SafeAreaView style={globalStyles.safeArea}>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         <View style={styles.loginContainer}>
-          <Text style={styles.title}>LISTA GOLDEN</Text>
+          <Image
+  source={require('../assets/images/listagolden-removebg-preview.png')}
+  style={styles.logoImage}
+  resizeMode="contain"
+/>
+
           <Text style={styles.subtitle}>
             {isLogin ? 'Accede a tus beneficios' : 'Crea tu cuenta para empezar'}
           </Text>
 
-          <View style={styles.socialButtons}>
-            <TouchableOpacity
-              style={[styles.socialButton, styles.googleButton]}
-              onPress={() => handleSocialLogin('google')}
-            >
-              <Chrome size={20} color={colors.white} />
-              <Text style={styles.socialButtonText}>Iniciar con Google</Text>
-            </TouchableOpacity>
+         
 
-            <TouchableOpacity
-              style={[styles.socialButton, styles.facebookButton]}
-              onPress={() => handleSocialLogin('facebook')}
-            >
-              <Facebook size={20} color={colors.white} />
-              <Text style={styles.socialButtonText}>Iniciar con Facebook</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.divider}>
-            <Text style={styles.dividerText}>
-              {isLogin ? 'O INICIA SESIÓN CON TU CUENTA' : 'O REGÍSTRATE CON TU EMAIL'}
-            </Text>
-          </View>
+         
 
           <View style={styles.form}>
             {!isLogin && (
@@ -278,7 +263,29 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
                 ? '¿No tienes cuenta? Regístrate'
                 : '¿Ya tienes cuenta? Inicia sesión'}
             </Text>
+             <View style={styles.divider}>
+            <Text style={styles.dividerText}>
+              {isLogin ? 'O INICIA SESIÓN CON TU CUENTA' : 'O REGÍSTRATE CON TU EMAIL'}
+            </Text>
+          </View>
           </TouchableOpacity>
+           <View style={styles.socialButtons}>
+            <TouchableOpacity
+              style={[styles.socialButton, styles.googleButton]}
+              onPress={() => handleSocialLogin('google')}
+            >
+              <Chrome size={20} color={colors.white} />
+              <Text style={styles.socialButtonText}>Iniciar con Google</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.socialButton, styles.facebookButton]}
+              onPress={() => handleSocialLogin('facebook')}
+            >
+              <Facebook size={20} color={colors.white} />
+              <Text style={styles.socialButtonText}>Iniciar con Facebook</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
 
@@ -324,9 +331,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 32,
   },
-  socialButtons: {
-    marginBottom: 24,
-  },
+ socialButtons: {
+  marginTop: 24,
+  marginBottom: 12,
+},
+
   socialButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -406,6 +415,14 @@ const styles = StyleSheet.create({
     borderColor: colors.brandGray,
     borderRadius: 6,
   },
+logoImage: {
+  width: 160,  // Aumentá el ancho
+  height: 160, // Aumentá el alto
+  alignSelf: 'center',
+  marginBottom: 16,
+},
+
+
   picker: {
     color: colors.brandLight,
     height: 48,

@@ -40,11 +40,11 @@ export default function LandingScreen({ navigation }: LandingScreenProps) {
         <View style={styles.contentWrapper}>
           <View style={styles.imageContainer}>
             <Animated.View style={{ transform: [{ scale: keyScale }] }}>
-              <Image
-                source={{ uri: 'https://images.pexels.com/photos/1765316/pexels-photo-1765316.jpeg?auto=compress&cs=tinysrgb&w=400' }}
-                style={styles.keyImage}
-                resizeMode="contain"
-              />
+               <Image
+    source={require('../assets/images/listagolden.jpeg')}
+    style={styles.keyImage}
+    resizeMode="contain"
+  />
             </Animated.View>
           </View>
           
