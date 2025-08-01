@@ -1,18 +1,34 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import InAppBrowser from 'react-native-inappbrowser-reborn';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Linking, AppState } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, MapPin, Building2, Gift } from 'lucide-react-native';
+import { 
+  ArrowLeft, 
+  MapPin, 
+  Building2, 
+  Gift,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Unlock, // Importa el icono de "desbloqueado"
+  Lock    // Importa el icono de "bloqueado"
+} from 'lucide-react-native';
 import { colors } from '../constants/colors';
 import { globalStyles } from '../styles/globalStyles';
 import { Button } from '../components/Button';
 import { EstablishmentCard } from '../components/EstablishmentCard';
 import { Toast } from '../components/Toast';
-import { useCompanies } from '../hooks/useCompanies';
+// import { useCompanies } from '../hooks/useCompanies'; // Ya no se usa directamente aquí
 import { useUserProfile } from '../hooks/useUserProfile';
 import { useProvinces } from '../hooks/useProvinces';
+import { useCompaniesByProvince } from '../hooks/useCompaniesByProvince';
 import { formatCurrency } from '../utils/currency';
+import api from '../lib/api';
 
-const PROVINCE_ACCESS_FEE = 10000;
+// PROVINCE_ACCESS_FEE parece ser un valor de ejemplo.
+// El precio real ahora viene del backend a través de `location.location.price`.
+// Puedes quitar esta constante si ya no la usas.
+const PROVINCE_ACCESS_FEE = 10000; 
 
 interface ProvinceScreenProps {
   route: {
@@ -25,23 +41,93 @@ interface ProvinceScreenProps {
 
 export default function ProvinceScreen({ route, navigation }: ProvinceScreenProps) {
   const { name: provinceName } = route.params;
-  
-  const { getCompaniesByProvince } = useCompanies();
-  const { getActiveProvinces, activateProvince } = useUserProfile();
+
+  const { getActiveProvinces, activateProvince, refreshUserProfile } = useUserProfile();
   const { getProvinceByName } = useProvinces();
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [provincePrice, setProvincePrice] = useState(0);
+  const [paymentStatus, setPaymentStatus] = useState<'success' | 'failure' | 'pending' | null>(null);
 
   const activeProvinces = getActiveProvinces();
-  const isActive = activeProvinces.includes(provinceName);
-  const establishments = getCompaniesByProvince(provinceName);
+  // `isProvinceGloballyActive` indica si la provincia ya fue pagada y está en la lista de provincias activas del userProfile
+  const isProvinceGloballyActive = activeProvinces.includes(provinceName); 
   const province = getProvinceByName(provinceName);
+  
+  // `establishments` ahora incluirá la propiedad `is_active_for_user` desde el backend
+  const { companies: establishments, loading: companiesLoading } = useCompaniesByProvince(province?.id || null);
+
+  useEffect(() => {
+    if (!companiesLoading && establishments.length > 0) {
+      // Usamos el precio de la primera compañía como referencia, ya que el precio de la provincia 
+      // debe ser consistente para todas las ubicaciones en esa provincia.
+      const price = establishments[0]?.location?.location?.price ?? 0; 
+      setProvincePrice(price);
+    }
+  }, [companiesLoading, establishments]);
 
   const showToast = (message: string) => {
     setToastMessage(message);
     setToastVisible(true);
   };
+
+  const handleDeepLink = useCallback(async (event: { url: string }) => {
+    console.log('Deep link recibido:', event.url);
+    const url = new URL(event.url);
+    const status = url.searchParams.get('status');
+
+    if (url.protocol === 'listagolden:' && url.hostname === 'payment') {
+      if (status === 'success') {
+        setPaymentStatus('success');
+        showToast('¡Pago Exitoso! Activando provincia...');
+        await refreshUserProfile(); 
+        // Si tu hook `useCompaniesByProvince` no se refresca automáticamente después de `refreshUserProfile`,
+        // podrías necesitar añadir un mecanismo para volver a cargar las compañías aquí,
+        // para que se refleje el `is_active_for_user` actualizado.
+        // Por ejemplo, si tu hook expone un método `refetchCompanies()`:
+        // refetchCompanies(); 
+      } else if (status === 'failure') {
+        setPaymentStatus('failure');
+        showToast('Pago Fallido. Por favor, intenta de nuevo.');
+      } else if (status === 'pending') {
+        setPaymentStatus('pending');
+        showToast('Pago Pendiente. Esperando confirmación.');
+      } else {
+        showToast('Pago finalizado (estado desconocido).');
+      }
+    }
+  }, [refreshUserProfile]);
+
+  useEffect(() => {
+    const linkingSubscription = Linking.addEventListener('url', handleDeepLink);
+
+    Linking.getInitialURL().then(url => {
+      if (url) {
+        handleDeepLink({ url });
+      }
+    });
+
+    const appStateListener = AppState.addEventListener('change', async (nextAppState) => {
+      if (nextAppState === 'active') {
+        // En Android, `getInitialURL()` se puede llamar múltiples veces.
+        // Solo llamamos si `paymentStatus` no está ya definido para evitar llamadas redundantes
+        // si el usuario sale y entra varias veces sin terminar el flujo de Mercado Pago.
+        if (paymentStatus === null) {
+             const url = await Linking.getInitialURL();
+             if (url) {
+               handleDeepLink({ url });
+             }
+        }
+      }
+    });
+
+    return () => {
+      linkingSubscription.remove(); 
+      appStateListener.remove();
+    };
+  }, [handleDeepLink, paymentStatus]);
+
 
   const handleActivateProvince = async () => {
     if (!province) {
@@ -50,42 +136,90 @@ export default function ProvinceScreen({ route, navigation }: ProvinceScreenProp
     }
 
     setLoading(true);
+    setPaymentStatus(null); // Limpiar el estado de pago anterior antes de iniciar uno nuevo
     try {
-      await activateProvince(province.id);
-      showToast(`¡${provinceName} activada con éxito!`);
+      const response = await api.post('/mercado-pago/create-preference', {
+        province_id: province.id,
+      });
+
+      const { init_point } = response.data;
+
+      if (!init_point) {
+        throw new Error('No se pudo obtener el link de pago.');
+      }
+      
+      if (await InAppBrowser.isAvailable()) {
+        await InAppBrowser.open(init_point, {
+          toolbarColor: colors.brandPrimary, 
+          showTitle: false,
+          enableUrlBarHiding: true,
+          enableDefaultShare: false,
+          forceCloseOnRedirection: true,
+        });
+      } else {
+        Linking.openURL(init_point);
+      }
+      
+      showToast('Redirigiendo a Mercado Pago para completar el pago...');
+
     } catch (error) {
-      showToast('Error al activar la provincia');
+      console.error('Error al iniciar el pago con Mercado Pago:', error);
+      showToast('Error al iniciar el pago.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleEstablishmentPress = (establishment: any) => {
-    navigation.navigate('EstablishmentDetail', { id: establishment.id });
+    // Si la provincia está globalmente activa O si esta compañía específica está activa para el usuario (a través de membresía), navega.
+    // Si no, muestra un toast indicando que se requiere activación.
+    if (isProvinceGloballyActive || establishment.is_active_for_user) {
+        navigation.navigate('EstablishmentDetail', { id: establishment.id });
+    } else {
+        showToast('Activa la provincia para acceder a este beneficio.');
+    }
   };
 
   return (
     <SafeAreaView style={globalStyles.safeArea}>
       <ScrollView style={styles.container}>
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity 
+       <View style={styles.header}>
+          <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
             <ArrowLeft size={24} color={colors.brandLight} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{provinceName}</Text>
-        </View>
+      </View>
+
+        {/* Banner de Estado de Pago (con iconos) */}
+        {paymentStatus && (
+          <View style={[styles.paymentStatusBanner, 
+                        paymentStatus === 'success' && styles.successBanner,
+                        paymentStatus === 'failure' && styles.failureBanner,
+                        paymentStatus === 'pending' && styles.pendingBanner]}>
+            {paymentStatus === 'success' && <CheckCircle size={24} color={colors.white} style={styles.paymentStatusIcon} />}
+            {paymentStatus === 'failure' && <XCircle size={24} color={colors.white} style={styles.paymentStatusIcon} />}
+            {paymentStatus === 'pending' && <Clock size={24} color={colors.white} style={styles.paymentStatusIcon} />}
+            
+            <Text style={styles.paymentStatusText}>
+              {paymentStatus === 'success' && '¡Pago Exitoso! La provincia ha sido activada.'}
+              {paymentStatus === 'failure' && 'Pago Fallido. Por favor, inténtalo de nuevo.'}
+              {paymentStatus === 'pending' && 'Pago Pendiente. Esperando confirmación.'}
+            </Text>
+          </View>
+        )}
 
         {/* Province Status Card */}
-        <View style={[globalStyles.card, styles.statusCard]}>
+       <View style={[globalStyles.card, styles.statusCard]}>
           <View style={styles.statusHeader}>
             <MapPin size={24} color={colors.brandGold} />
-            <Text style={styles.statusTitle}>Estado de la Provincia</Text>
+            <Text style={styles.statusTitle}>Estado de la Provincia </Text>
           </View>
           
-          {isActive ? (
+          {isProvinceGloballyActive ? (
             <View style={styles.activeStatus}>
               <Text style={styles.activeText}>✅ Provincia Activa</Text>
               <Text style={styles.activeSubtext}>
@@ -95,18 +229,21 @@ export default function ProvinceScreen({ route, navigation }: ProvinceScreenProp
           ) : (
             <View style={styles.inactiveStatus}>
               <Text style={styles.inactiveText}>🔒 Provincia Inactiva</Text>
-              <Text style={styles.inactiveSubtext}>
-                Activa {provinceName} para acceder a {establishments.length} beneficios exclusivos
-              </Text>
-              <Text style={styles.priceText}>
-                Costo de activación: {formatCurrency(PROVINCE_ACCESS_FEE)}
-              </Text>
-              <Button
-                title={loading ? 'Activando...' : `Activar por ${formatCurrency(PROVINCE_ACCESS_FEE)}`}
-                onPress={handleActivateProvince}
-                disabled={loading}
-                style={styles.activateButton}
-              />
+              {companiesLoading ? (
+                <Text style={styles.inactiveSubtext}>Cargando beneficios disponibles...</Text>
+              ) : (
+                <>
+                  <Text style={styles.inactiveSubtext}>
+                    Activa {provinceName} para acceder a {establishments.length} beneficios exclusivos
+                  </Text>
+                  <Button
+                    title={loading ? 'Activando...' : `Activar por ${formatCurrency(provincePrice)}`}
+                    onPress={handleActivateProvince}
+                    disabled={loading || establishments.length === 0}
+                    style={styles.activateButton}
+                  />
+                </>
+              )}
             </View>
           )}
         </View>
@@ -131,44 +268,38 @@ export default function ProvinceScreen({ route, navigation }: ProvinceScreenProp
         </View>
 
         {/* Establishments List */}
-        {isActive ? (
-          <View style={styles.establishmentsList}>
-            <Text style={globalStyles.subtitle}>Tus Beneficios en {provinceName}</Text>
-            {establishments.map(establishment => (
-              <EstablishmentCard
-                key={establishment.id}
-                establishment={establishment}
-                onPress={handleEstablishmentPress}
-              />
-            ))}
-          </View>
-        ) : (
-          <View style={styles.previewList}>
-            <Text style={globalStyles.subtitle}>Vista Previa de Beneficios</Text>
-            <Text style={styles.previewText}>
-              Estos son algunos de los beneficios que tendrás disponibles al activar {provinceName}:
-            </Text>
-            {establishments.slice(0, 2).map(establishment => (
-              <View key={establishment.id} style={styles.previewCard}>
-                <EstablishmentCard
-                  establishment={establishment}
-                  onPress={() => showToast('Activa la provincia para acceder a este beneficio')}
-                />
-                <View style={styles.previewOverlay}>
-                  <Text style={styles.previewOverlayText}>🔒 Requiere Activación</Text>
-                </View>
-              </View>
-            ))}
-            
-            {establishments.length > 2 && (
-              <View style={styles.moreEstablishments}>
-                <Text style={styles.moreText}>
-                  +{establishments.length - 2} beneficios más disponibles
-                </Text>
-              </View>
+        {/* Siempre mostrar la lista completa, pero con indicadores visuales */}
+        <View style={styles.establishmentsList}>
+            <Text style={globalStyles.subtitle}>Beneficios en {provinceName}</Text>
+            {companiesLoading ? (
+                <Text>Cargando establecimientos...</Text>
+            ) : establishments.length === 0 ? (
+                <Text>No hay establecimientos disponibles.</Text>
+            ) : (
+                establishments.map(establishment => (
+                  <View key={establishment.id} style={styles.establishmentItemWrapper}>
+                    <EstablishmentCard
+                      establishment={establishment}
+                      onPress={() => handleEstablishmentPress(establishment)}
+                    />
+                    {/* Indicador de Membresía: Bloqueado si la provincia no está activa y la compañía tampoco */}
+                    {!isProvinceGloballyActive && !establishment.is_active_for_user && (
+                      <View style={styles.membershipOverlay}>
+                        <Lock size={20} color={colors.white} />
+                        <Text style={styles.membershipOverlayText}>Requiere activación de provincia</Text>
+                      </View>
+                    )}
+                    {/* Indicador de Membresía: Activado si la compañía está activa pero la provincia general no (escenario menos común pero posible) */}
+                    {!isProvinceGloballyActive && establishment.is_active_for_user && (
+                      <View style={styles.membershipActiveOverlay}>
+                        <Unlock size={20} color={colors.white} />
+                        <Text style={styles.membershipOverlayText}>Ya activado</Text>
+                      </View>
+                    )}
+                  </View>
+                ))
             )}
-          </View>
-        )}
+        </View>
       </ScrollView>
 
       <Toast
@@ -244,12 +375,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: colors.warning,
     marginBottom: 8,
+    textAlign: 'center',
   },
   inactiveSubtext: {
     fontSize: 14,
     color: colors.brandLight,
     textAlign: 'center',
     marginBottom: 12,
+    lineHeight: 20,
   },
   priceText: {
     fontSize: 16,
@@ -296,38 +429,77 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 8,
   },
-  previewList: {
+  establishmentItemWrapper: {
+    position: 'relative',
+    marginBottom: 16, // Espacio entre las tarjetas
+  },
+  membershipOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)', // Capa oscura semi-transparente
+    borderRadius: 12, // Asegura que coincida con el borde de la tarjeta
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1, // Asegura que esté por encima de la tarjeta
+    flexDirection: 'row', // Para alinear el icono y el texto
+    padding: 10,
+  },
+  membershipActiveOverlay: {
+    position: 'absolute',
+    top: 10, 
+    right: 10,
+    backgroundColor: colors.success, // Un color que indique éxito
+    borderRadius: 20,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 2, 
+  },
+  membershipOverlayText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.white,
+    marginLeft: 5,
+    textAlign: 'center',
+  },
+  previewList: { // Estos estilos ya no se usarían si siempre se muestra la lista completa
     padding: 16,
     paddingTop: 8,
   },
-  previewText: {
+  previewText: { // Estos estilos ya no se usarían
     fontSize: 14,
     color: colors.brandGray,
     marginBottom: 16,
     textAlign: 'center',
     lineHeight: 20,
   },
-  previewCard: {
+  previewCard: { // Estos estilos ya no se usarían
     position: 'relative',
     marginBottom: 16,
   },
-  previewOverlay: {
+  previewOverlay: { // Estos estilos ya no se usarían
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 12,
+    padding: 10,
   },
-  previewOverlayText: {
+  previewOverlayText: { // Estos estilos ya no se usarían
     fontSize: 16,
     fontWeight: 'bold',
     color: colors.brandGold,
+    textAlign: 'center',
   },
-  moreEstablishments: {
+  moreEstablishments: { // Estos estilos ya no se usarían si siempre se muestra la lista completa
     alignItems: 'center',
     padding: 20,
     backgroundColor: colors.brandDarkSecondary,
@@ -336,9 +508,35 @@ const styles = StyleSheet.create({
     borderColor: colors.brandGold,
     borderStyle: 'dashed',
   },
-  moreText: {
+  moreText: { // Estos estilos ya no se usarían
     fontSize: 16,
     fontWeight: '600',
     color: colors.brandGold,
+  },
+  paymentStatusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginHorizontal: 16, // Agregado para que no ocupe todo el ancho
+    marginBottom: 15,
+  },
+  paymentStatusIcon: {
+    marginRight: 8,
+  },
+  paymentStatusText: {
+    color: colors.white,
+    textAlign: 'center',
+    flexShrink: 1,
+  },
+  successBanner: {
+    backgroundColor: colors.success,
+  },
+  failureBanner: {
+    backgroundColor: colors.error,
+  },
+  pendingBanner: {
+    backgroundColor: colors.warning,
   },
 });

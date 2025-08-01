@@ -1,14 +1,20 @@
+// src/contexts/AuthContext.tsx
+
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Session, User } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import * as Keychain from 'react-native-keychain'; // ✅ Usamos react-native-keychain
+import api from '../lib/api';
 import { navigationRef } from '../lib/navigationRef';
+import { CommonActions } from '@react-navigation/native';
+
+interface User {
+  id: number;
+  full_name: string;
+  email: string;
+}
 
 interface AuthContextType {
-  session: Session | null;
   user: User | null;
   loading: boolean;
-  justLoggedIn: boolean;
-  setJustLoggedIn: (value: boolean) => void;
   signUp: (email: string, password: string, userData: {
     fullName: string;
     city: string;
@@ -18,127 +24,107 @@ interface AuthContextType {
   signOut: () => Promise<void>;
 }
 
-
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [justLoggedIn, setJustLoggedIn] = useState(false);
 
   useEffect(() => {
-    // Obtener sesión inicial
-supabase.auth.getSession().then(({ data: { session } }) => {
-  setSession(session);
-  setUser(session?.user ?? null);
-  setJustLoggedIn(false); // 👈 esto es clave
-  setLoading(false);
-});
+    const loadUser = async () => {
+      try {
+        const credentials = await Keychain.getGenericPassword();
+        const token = credentials ? credentials.password : null;
 
+        if (token) {
+          const { data } = await api.get('/v1/auth/me');
+          setUser(data);
+        }
+      } catch (error) {
+        // ✅ Aquí es donde hacemos el cambio.
+        // Podrías registrar el error solo en modo desarrollo o no mostrarlo en consola al usuario.
+        // console.warn('Keychain no disponible o error al cargar sesión, esto es normal en primera carga o emuladores sin soporte completo.'); // Cambiamos a warn o simplemente removemos para producción
+        await Keychain.resetGenericPassword(); // Limpiamos en caso de un token corrupto o error de acceso.
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    // Escuchar cambios de autenticación
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    loadUser();
   }, []);
-
+  
   const signUp = async (email: string, password: string, userData: {
     fullName: string;
     city: string;
     phone: string;
   }) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: userData.fullName,
-          city: userData.city,
-          phone: userData.phone,
-        },
-      },
-    });
+    try {
+      const { data } = await api.post('/v1/auth/register', {
+        email,
+        password,
+        full_name: userData.fullName,
+        city: userData.city,
+        phone: userData.phone,
+      });
 
-    if (error) throw error;
-
-    // Crear perfil de usuario
-    if (data.user) {
-      const { error: profileError } = await supabase
-        .from('user_profiles')
-        .insert({
-          id: data.user.id,
-          full_name: userData.fullName,
-          city: userData.city,
-          phone: userData.phone,
-          accumulated_savings: 0,
-        });
-
-      if (profileError) throw profileError;
+      // ✅ Usamos setGenericPassword para guardar el token
+      await Keychain.setGenericPassword('token', data.authorisation.token);
+      setUser(data.user);
+      return data;
+    } catch (error: any) {
+      console.error('Error en el registro:', error.response?.data || error.message);
+      throw error;
     }
-
-    return data;
   };
 
-const signIn = async (email: string, password: string) => {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw error;
+  const signIn = async (email: string, password: string) => {
+    try {
+      const { data } = await api.post('/auth/login', {
+        email,
+        password,
+      });
 
-  setUser(data.user);
-  setJustLoggedIn(true);
+      // ✅ Usamos setGenericPassword para guardar el token
+      await Keychain.setGenericPassword('token', data.access_token);
 
-  // Esperá un tick del event loop para que el stack se monte
- setTimeout(() => {
-  navigationRef.current?.reset({
-    index: 0,
-    routes: [{ name: 'LoginVideo' }],
-  });
-}, 100);
+      setUser(data.user);
 
+      navigationRef.current?.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: 'LoginVideo' }],
+        })
+      );
 
-  return data;
-};
+      return data;
+    } catch (error: any) {
+      console.error('Error al iniciar sesión:', error.response?.data || error.message);
+      throw error;
+    }
+  };
 
-
-
-
-const signOut = async () => {
-  const { error } = await supabase.auth.signOut();
-  if (error) throw error;
-  setJustLoggedIn(false); // 👈 limpiar al salir
-};
-
-
+  const signOut = async () => {
+    try {
+      await api.get('/v1/auth/logout');
+      await Keychain.resetGenericPassword(); // ✅ Limpiamos las credenciales
+      setUser(null);
+    } catch (error: any) {
+      console.error('Error al cerrar sesión:', error.response?.data || error.message);
+      throw error;
+    }
+  };
 
   return (
-    <AuthContext.Provider value={{
-  session,
-  user,
-  loading,
-  signUp,
-  signIn,
-  signOut,
-  justLoggedIn,      // 👈 exponer
-  setJustLoggedIn,
-     // 👈 exponer
-}}>
-  {children}
-</AuthContext.Provider>
-
+    <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut }}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error('useAuth debe ser usado dentro de un AuthProvider');
   }
   return context;
 }

@@ -1,11 +1,14 @@
+// src/hooks/useProvinces.ts
+
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import api from '../lib/api';
 
 export interface Province {
   id: number;
   description: string;
   created_at: string;
   updated_at: string;
+  price: number; // ✅ Añadimos la nueva propiedad 'price'
 }
 
 export function useProvinces() {
@@ -18,12 +21,7 @@ export function useProvinces() {
 
   const fetchProvinces = async () => {
     try {
-      const { data, error } = await supabase
-        .from('provinces')
-        .select('*')
-        .order('description');
-
-      if (error) throw error;
+      const { data } = await api.get('/provinces');
       setProvinces(data || []);
     } catch (error) {
       console.error('Error fetching provinces:', error);

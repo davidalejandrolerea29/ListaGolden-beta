@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import api from '../lib/api'; // ✅ Importamos la instancia de axios
 
 export interface Company {
   id: number;
@@ -73,34 +73,14 @@ export function useCompanies() {
 
   const fetchCompanies = async () => {
     try {
-      const { data, error } = await supabase
-        .from('companies')
-        .select(`
-          *,
-          images:companies_images(*),
-          location:locations_companies(
-            *,
-            location:locations(
-              *,
-              province:provinces(id, description)
-            )
-          ),
-          services(
-            *,
-            promotions(*)
-          ),
-          schedules(
-            *,
-            day:days(id, description)
-          )
-        `);
+      const { data } = await api.get('/companies'); // ✅ Usamos el nuevo endpoint
 
-      if (error) throw error;
-
-      // Transformar datos para que coincidan con la estructura esperada
-      const transformedCompanies = data?.map(company => ({
+      // La respuesta de Laravel con `eager loading` ya tiene la estructura correcta,
+      // así que no necesitamos una transformación compleja como la de Supabase.
+      // Sin embargo, si `location` viene como un array, lo transformamos.
+      const transformedCompanies = data.map((company: any) => ({
         ...company,
-        location: company.location?.[0] || null,
+        location: company.location?.[0] || null, // Acepta la primera locación si viene como array
       })) || [];
 
       setCompanies(transformedCompanies);
@@ -110,10 +90,13 @@ export function useCompanies() {
       setLoading(false);
     }
   };
+  
+  // (El resto de las funciones `getCompaniesByProvince`, `getCompanyById`, etc.
+  // no necesitan cambios, ya que operan sobre el estado `companies`).
 
   const getCompaniesByProvince = (provinceName: string) => {
     return companies.filter(
-      company => company.location?.location.province.description === provinceName
+      company => company.location?.location?.province?.description === provinceName
     );
   };
 
@@ -125,7 +108,7 @@ export function useCompanies() {
     return companies.filter(
       company => 
         company.with_delivery && 
-        company.location?.location.province.description &&
+        company.location?.location?.province?.description &&
         activeProvinces.includes(company.location.location.province.description)
     );
   };
