@@ -5,7 +5,7 @@ import { navigationRef } from './navigationRef';
 import { CommonActions } from '@react-navigation/native';
 import * as Keychain from 'react-native-keychain';
 
-const API_URL = 'https://listagolden.duckdns.org/api/v1'; 
+const API_URL = 'http://192.168.1.41:8000/api/v1'; 
 const api = axios.create({
   baseURL: API_URL,
   headers: {
