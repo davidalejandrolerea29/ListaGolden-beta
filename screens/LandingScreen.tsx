@@ -41,7 +41,7 @@ export default function LandingScreen({ navigation }: LandingScreenProps) {
           <View style={styles.imageContainer}>
             <Animated.View style={{ transform: [{ scale: keyScale }] }}>
                <Image
-    source={require('../assets/images/listagolden.jpeg')}
+    source={require('../assets/images/listaicon2.jpeg')}
     style={styles.keyImage}
     resizeMode="contain"
   />
