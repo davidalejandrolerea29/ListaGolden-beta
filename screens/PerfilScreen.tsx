@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Image, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MapPin, Phone, CreditCard, PiggyBank, CircleCheck as CheckCircle, KeyRound, Settings, LogOut } from 'lucide-react-native';
@@ -10,6 +10,7 @@ import { Toast } from '../components/Toast';
 import { useUserProfile } from '../hooks/useUserProfile';
 import { useProvinces } from '../hooks/useProvinces';
 import { useAuth } from '../hooks/useAuth';
+import api from '../lib/api';
 import { formatCurrency } from '../utils/currency';
 
 const PROVINCE_ACCESS_FEE = 10000;
@@ -20,7 +21,20 @@ interface PerfilScreenProps {
 }
 
 export default function PerfilScreen({ navigation }: PerfilScreenProps) {
-  const { profile, activateProvince, getActiveProvinces } = useUserProfile();
+  const [profile, setProfile] = useState(null);
+
+  useEffect(() => {
+  const fetchProfile = async () => {
+    try {
+      const res = await api.get('/auth/me'); // 👈 ajustá si el endpoint es otro
+      setProfile(res.data);
+    } catch (err) {
+      console.error('Error al obtener el perfil:', err);
+    }
+  };
+
+  fetchProfile();
+}, []);
   const { provinces } = useProvinces();
   const { signOut } = useAuth();
   const [profilePicModalVisible, setProfilePicModalVisible] = useState(false);
@@ -30,7 +44,9 @@ export default function PerfilScreen({ navigation }: PerfilScreenProps) {
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
-  const activeProvinces = getActiveProvinces();
+ // const activeProvinces = getActiveProvinces();
+ const activeProvinces = []; // Para que no tire error mientras adaptás el resto
+
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -125,7 +141,12 @@ export default function PerfilScreen({ navigation }: PerfilScreenProps) {
           </View>
           
           <View style={styles.savingsMainDisplay}>
-            <Text style={styles.savingsAmount}>{formatCurrency(profile.accumulated_savings)}</Text>
+            <Text>
+  {profile?.accumulated_savings != null
+    ? profile.accumulated_savings.toLocaleString()
+    : '0'}
+</Text>
+
             <Text style={styles.savingsLabel}>Total Ahorrado</Text>
           </View>
 

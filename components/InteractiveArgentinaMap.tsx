@@ -11,6 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import MapView, { Marker, Polygon, Region, PROVIDER_GOOGLE } from 'react-native-maps';
+import { WebView } from 'react-native-webview';
 import argentinaGeoJSON from '../assets/ar.json';
 import { colors } from '../constants/colors';
 
@@ -40,185 +41,214 @@ export function InteractiveArgentinaMap({
   onRegionChange = () => {},
   style = {},
 }: Props) {
-  const mapRef = useRef<MapView>(null);
-   const [isAndroid, setIsAndroid] = useState(false)
+  const webViewRef = useRef<WebView>(null);
   const [mapReady, setMapReady] = useState(false);
-  const [forceUpdateKey, setForceUpdateKey] = useState(0);
+  const [mounted, setMounted] = useState(true);
 
+  // Limpieza mejorada del componente
   useEffect(() => {
-    setIsAndroid(Platform.OS === 'android');
+    setMounted(true);
     
     return () => {
-      // Solución para el error en Android
-      if (isAndroid && mapRef.current) {
-        try {
-          mapRef.current?.getMap().then(map => {
-            map.remove();
-          });
-        } catch (error) {
-          console.log('Error cleaning map:', error);
-        }
-      }
+      setMounted(false);
+      setMapReady(false);
     };
   }, []);
 
+  // Generar HTML para el mapa de OpenStreetMap
+  const generateMapHTML = useCallback(() => {
+    const provincesData = argentinaGeoJSON.features.map(feature => ({
+      name: feature.properties.name,
+      geometry: feature.geometry,
+      isActive: activeProvinces.includes(feature.properties.name),
+      isSelected: selectedProvince === feature.properties.name,
+    }));
 
-  // Solución definitiva para el problema de África
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (mapRef.current) {
-        mapRef.current.animateToRegion(currentRegion, 1000);
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <style>
+          body { margin: 0; padding: 0; }
+          #map { height: 100vh; width: 100%; }
+        </style>
+      </head>
+      <body>
+        <div id="map"></div>
+        <script>
+          const map = L.map('map').setView([${currentRegion.latitude}, ${currentRegion.longitude}], 6);
+          
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+          }).addTo(map);
+
+          const provincesData = ${JSON.stringify(provincesData)};
+          const colors = ${JSON.stringify(colors)};
+
+          provincesData.forEach(province => {
+            if (province.geometry.type === 'Polygon') {
+              province.geometry.coordinates.forEach(ring => {
+                const coords = ring.map(coord => [coord[1], coord[0]]);
+                const polygon = L.polygon(coords, {
+                  color: province.isSelected ? colors.brandLight : colors.brandDark,
+                  fillColor: province.isSelected ? colors.brandGold : 
+                            province.isActive ? colors.brandGold + '88' : colors.brandGray + '33',
+                  weight: 2,
+                  fillOpacity: 0.7
+                }).addTo(map);
+                
+                polygon.on('click', () => {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'provincePress',
+                    province: province.name
+                  }));
+                });
+              });
+            } else if (province.geometry.type === 'MultiPolygon') {
+              province.geometry.coordinates.forEach(polygon => {
+                polygon.forEach(ring => {
+                  const coords = ring.map(coord => [coord[1], coord[0]]);
+                  const poly = L.polygon(coords, {
+                    color: province.isSelected ? colors.brandLight : colors.brandDark,
+                    fillColor: province.isSelected ? colors.brandGold : 
+                              province.isActive ? colors.brandGold + '88' : colors.brandGray + '33',
+                    weight: 2,
+                    fillOpacity: 0.7
+                  }).addTo(map);
+                  
+                  poly.on('click', () => {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                      type: 'provincePress',
+                      province: province.name
+                    }));
+                  });
+                });
+              });
+            }
+          });
+
+          // Agregar marcador si hay provincia seleccionada
+          ${selectedProvince ? `
+            const markerCoords = ${JSON.stringify(getMarkerCoordinates(selectedProvince))};
+            L.marker([markerCoords.latitude, markerCoords.longitude])
+              .addTo(map)
+              .bindPopup('${selectedProvince}');
+          ` : ''}
+        </script>
+      </body>
+      </html>
+    `;
+  }, [activeProvinces, selectedProvince, currentRegion]);
+
+  const handleWebViewMessage = useCallback((event: any) => {
+    if (!mounted) return;
+    
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'provincePress') {
+        onProvincePress(data.province);
       }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [forceUpdateKey, currentRegion]);
-
-  const handleMapReady = useCallback(() => {
-    setMapReady(true);
-    if (mapRef.current) {
-      mapRef.current.animateToRegion(currentRegion, 1000);
+    } catch (error) {
+      console.log('Error parsing WebView message:', error);
     }
-  }, [currentRegion]);
+  }, [onProvincePress, mounted]);
 
-  const handleRegionChangeComplete = useCallback((region: Region) => {
-    onRegionChange(region);
-  }, [onRegionChange]);
+  const getMarkerCoordinates = useCallback((provinceName: string) => {
+    try {
+      const feature = argentinaGeoJSON.features.find(
+        (f) => f.properties.name === provinceName
+      );
+      if (!feature) return { latitude: -38, longitude: -63 };
 
-  const extractPolygons = (geometry: any): { latitude: number; longitude: number }[][] => {
-    const polygons: { latitude: number; longitude: number }[][] = [];
+      let coords: number[] | undefined;
 
-    if (geometry.type === 'Polygon') {
-      geometry.coordinates.forEach((ring: number[][]) => {
-        polygons.push(
-          ring.map(([lng, lat]: number[]) => ({
-            latitude: lat,
-            longitude: lng,
-          }))
-        );
-      });
-    } else if (geometry.type === 'MultiPolygon') {
-      geometry.coordinates.forEach((polygon: number[][][]) => {
-        polygon.forEach((ring: number[][]) => {
-          polygons.push(
-            ring.map(([lng, lat]: number[]) => ({
-              latitude: lat,
-              longitude: lng,
-            }))
-          );
-        });
-      });
-    }
+      if (feature.geometry.type === 'Polygon') {
+        coords = feature.geometry.coordinates?.[0]?.[0];
+      } else if (feature.geometry.type === 'MultiPolygon') {
+        coords = feature.geometry.coordinates?.[0]?.[0]?.[0];
+      }
 
-    return polygons;
-  };
-
-  const getMarkerCoordinates = (provinceName: string) => {
-    const feature = argentinaGeoJSON.features.find(
-      (f) => f.properties.name === provinceName
-    );
-    if (!feature) return { latitude: -38, longitude: -63 };
-
-    let coords: number[] | undefined;
-
-    if (feature.geometry.type === 'Polygon') {
-      coords = feature.geometry.coordinates?.[0]?.[0];
-    } else if (feature.geometry.type === 'MultiPolygon') {
-      coords = feature.geometry.coordinates?.[0]?.[0]?.[0];
-    }
-
-    if (coords && Array.isArray(coords) && coords.length === 2) {
-      return {
-        latitude: coords[1],
-        longitude: coords[0],
-      };
+      if (coords && Array.isArray(coords) && coords.length === 2) {
+        return {
+          latitude: coords[1],
+          longitude: coords[0],
+        };
+      }
+    } catch (error) {
+      console.log('Error getting marker coordinates:', error);
     }
 
     return { latitude: -38, longitude: -63 };
-  };
+  }, []);
 
-  const openMapForProvince = (provinceName: string) => {
-    const feature = argentinaGeoJSON.features.find(
-      (f) => f.properties.name === provinceName
-    );
-    const coords = feature?.geometry.coordinates?.[0]?.[0];
-    if (!coords) {
-      Alert.alert('Error', 'No se encontraron coordenadas para esta provincia.');
-      return;
-    }
+  const openMapForProvince = useCallback((provinceName: string) => {
+    try {
+      const feature = argentinaGeoJSON.features.find(
+        (f) => f.properties.name === provinceName
+      );
+      const coords = feature?.geometry.coordinates?.[0]?.[0];
+      if (!coords) {
+        Alert.alert('Error', 'No se encontraron coordenadas para esta provincia.');
+        return;
+      }
 
-    const [lng, lat] = coords;
-    const url = Platform.select({
-      ios: `http://maps.apple.com/?ll=${lat},${lng}`,
-      android: `geo:${lat},${lng}?q=${lat},${lng}(${provinceName})`,
-    });
+      const [lng, lat] = coords;
+      const url = Platform.select({
+        ios: `http://maps.apple.com/?ll=${lat},${lng}`,
+        android: `geo:${lat},${lng}?q=${lat},${lng}(${provinceName})`,
+      });
 
-    Linking.openURL(url as string).catch(() => {
+      Linking.openURL(url as string).catch(() => {
+        Alert.alert('Error', 'No se pudo abrir la aplicación de mapas.');
+      });
+    } catch (error) {
+      console.log('Error opening map:', error);
       Alert.alert('Error', 'No se pudo abrir la aplicación de mapas.');
-    });
-  };
-
-  const resetMapView = () => {
-    setForceUpdateKey(prev => prev + 1);
-    if (mapRef.current) {
-      mapRef.current.animateToRegion(currentRegion, 1000);
     }
-  };
+  }, []);
+
+  const resetMapView = useCallback(() => {
+    if (mounted && webViewRef.current) {
+      try {
+        webViewRef.current.postMessage(JSON.stringify({
+          type: 'resetView',
+          region: currentRegion
+        }));
+      } catch (error) {
+        console.log('Error resetting map:', error);
+      }
+    }
+  }, [currentRegion, mounted]);
 
   if (!argentinaGeoJSON?.features?.length) {
-    return <Text style={styles.subtitle}>Cargando mapa...</Text>;
+    return (
+      <View style={[styles.container, style]}>
+        <Text style={styles.subtitle}>Cargando mapa...</Text>
+      </View>
+    );
   }
 
   return (
-    <View style={[styles.container, style]} key={`map-container-${forceUpdateKey}`}>
+    <View style={[styles.container, style]}>
       <Text style={styles.title}>Mapa Interactivo de Argentina</Text>
       <Text style={styles.subtitle}>Toca una provincia para ver sus beneficios</Text>
 
-      <MapView
-        ref={mapRef}
-        key={`map-view-${forceUpdateKey}`}
+      <WebView
+        ref={webViewRef}
         style={styles.map}
-        provider={PROVIDER_GOOGLE}
-        androidLayerType={isAndroid ? 'hardware' : 'none'}
-        initialRegion={currentRegion}
-        region={currentRegion}
-        onMapReady={handleMapReady}
-        onLayout={handleMapReady}
-        onRegionChangeComplete={handleRegionChangeComplete}
-      >
-        {mapReady && argentinaGeoJSON.features.map((feature, idx) => {
-          const name = feature.properties.name;
-          const isActive = activeProvinces.includes(name);
-          const isSelected = selectedProvince === name;
-
-          const polygons = extractPolygons(feature.geometry);
-
-          return polygons.map((coords, i) => (
-            <Polygon
-              key={`${name}-${idx}-${i}-${forceUpdateKey}`}
-              coordinates={coords}
-              strokeColor={isSelected ? colors.brandLight : colors.brandDark}
-              fillColor={
-                isSelected
-                  ? colors.brandGold
-                  : isActive
-                  ? `${colors.brandGold}88`
-                  : `${colors.brandGray}33`
-              }
-              strokeWidth={2}
-              tappable
-              onPress={() => onProvincePress(name)}
-            />
-          ));
-        })}
-
-        {selectedProvince && (
-          <Marker
-            coordinate={getMarkerCoordinates(selectedProvince)}
-            title={selectedProvince}
-          />
-        )}
-      </MapView>
+        source={{ html: generateMapHTML() }}
+        onMessage={handleWebViewMessage}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        startInLoadingState={true}
+        scalesPageToFit={true}
+        scrollEnabled={false}
+        onLoad={() => setMapReady(true)}
+      />
 
       <TouchableOpacity 
         style={styles.resetButton}
@@ -245,7 +275,11 @@ export function InteractiveArgentinaMap({
                 isActive && styles.activeProvince,
                 isSelected && styles.selectedProvince,
               ]}
-              onPress={() => onProvincePress(province)}
+              onPress={() => {
+                if (mounted) {
+                  onProvincePress(province);
+                }
+              }}
               onLongPress={() => openMapForProvince(province)}
             >
               <Text
